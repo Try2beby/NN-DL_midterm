@@ -8,10 +8,6 @@ import pandas as pd
 from PIL import Image
 import os
 
-import matplotlib.pyplot as plt
-%matplotlib inline
-from matplotlib_inline import backend_inline
-
 
 np.random.seed(42)
 
@@ -97,16 +93,21 @@ test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers
 val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=4)
 
 
-
 from torchvision.models import resnet18, ResNet18_Weights
 from torch.utils.tensorboard import SummaryWriter
 import pickle
 
 
 class BirdClassificationCNN(nn.Module):
-    def __init__(self, num_classes=200, epochs=20):
+    def __init__(self, use_pretrained=True, num_classes=200):
         super(BirdClassificationCNN, self).__init__()
-        self.resnet = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+        if use_pretrained:
+            print("Load weights from pretrained model")
+            self.resnet = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+        else:
+            print("Load weights from scratch")
+            self.resnet = resnet18()
+
         self.resnet.fc = nn.Linear(512, num_classes)
         # self.conv1 = nn.Conv2d(1, 3, kernel_size=1)
         self.loss_record = {
@@ -117,7 +118,6 @@ class BirdClassificationCNN(nn.Module):
             "train": [],
             "val": [],
         }
-        self.epochs = epochs
         self.load_data()
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.writer = SummaryWriter()
@@ -125,30 +125,17 @@ class BirdClassificationCNN(nn.Module):
     def forward(self, x):
         return self.resnet(x)
 
-    # 初始化权重
-    def init_weights(self):
-        # for m in self.modules():
-        #     if isinstance(m, nn.Conv2d):
-        #         nn.init.kaiming_normal_(m.weight)
-        #     if isinstance(m, nn.Linear):
-        #         nn.init.kaiming_normal_(m.weight)
-        pass
-
     def load_data(self):
         self.train_loader = train_loader
         self.test_loader = test_loader
         self.val_loader = val_loader
 
-    def train(self,
-              epochs=50,
-              lr=0.001,
-              momentum=0.9,
-              weight_decay=0.001,
-              use_cache = False):
+    def train(
+        self, epochs=50, lr=0.001, momentum=0.9, weight_decay=0.001, use_cache=False
+    ):
         cache_path = f"./cache/{lr}_{momentum}_{weight_decay}.pt"
         if use_cache:
-            self.read_model(path = cache_path)
-            
+            self.read_model(path=cache_path)
 
         train_loader = self.train_loader
 
@@ -156,7 +143,9 @@ class BirdClassificationCNN(nn.Module):
         self.to(device)
         loss_function = nn.CrossEntropyLoss()
         # optimizer = optim.Adam(self.parameters(), lr=0.001, weight_decay=0.0001)
-        optimizer = optim.SGD(self.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
+        optimizer = optim.SGD(
+            self.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay
+        )
         for epoch in range(epochs):
             # running_loss = 0.0
             for i, data in enumerate(train_loader, 0):
@@ -190,11 +179,13 @@ class BirdClassificationCNN(nn.Module):
 
         print("Finished Training")
         # save the loss record and accuracy record
-        pickle.dump(self.loss_record, open("./cache/0.001_0.9_0.001.ptloss_record.pkl", "wb"))
+        pickle.dump(
+            self.loss_record, open("./cache/0.001_0.9_0.001.ptloss_record.pkl", "wb")
+        )
         pickle.dump(self.accuracy_record, open("./cache/accuracy_record.pkl", "wb"))
 
     # 读取模型参数
-    def read_model(self, path = "./cache/model.pt"):
+    def read_model(self, path="./cache/model.pt"):
         self.load_state_dict(path)
 
     # 在数据集上评估模型，返回总样本数和正确分类的样本数
@@ -238,21 +229,42 @@ class BirdClassificationCNN(nn.Module):
             "val": {"accuracy": val_accuracy, "loss": val_loss},
         }
 
+
 import argparse
 
+
 def main():
+    def str2bool(v):
+        if isinstance(v, bool):
+            return v
+        if v.lower() in ("yes", "true", "t", "y", "1"):
+            return True
+        elif v.lower() in ("no", "false", "f", "n", "0"):
+            return False
+        else:
+            raise argparse.ArgumentTypeError("Boolean value expected.")
+
     parser = argparse.ArgumentParser(description="Train the model")
     parser.add_argument("--epochs", type=int, default=50, help="Number of epochs")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
-    parser.add_argument("--weight_decay", type=float, default=0.001, help="Weight decay")
+    parser.add_argument(
+        "--weight_decay", type=float, default=0.001, help="Weight decay"
+    )
     parser.add_argument("--momentum", type=float, default=0.9, help="Momentum")
-    parser.add_argument("--use_cache", type=bool, default=False, help="Use cache")
+    parser.add_argument("--use_cache", type=str2bool, default=False, help="Use cache")
+    parser.add_argument(
+        "--use_pretrained", type=str2bool, default=True, help="Use pretrained"
+    )
 
     args = vars(parser.parse_args())
-    
-    model = BirdClassificationCNN()
+    print(args)
+
+    use_pretrained = args.pop("use_pretrained")
+
+    model = BirdClassificationCNN(use_pretrained=use_pretrained)
 
     model.train(**args)
+
 
 if __name__ == "__main__":
     main()
