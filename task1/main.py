@@ -9,7 +9,7 @@ from PIL import Image
 import os
 
 
-np.random.seed(42)
+np.random.seed(123)
 
 dataDir = "./data/CUB_200_2011/"
 
@@ -56,16 +56,17 @@ class CUB200(Dataset):
         if subset == "train":
             self.data = self.data[self.data["is_train"] == 1]
         else:
-            test_val_data = self.data[self.data["is_train"] == 0]
-            indices = np.arange(test_val_data.shape[0])
-            np.random.shuffle(indices)  # Shuffle indices to randomize test/val split
-            split_point = int(len(indices) / 2)
-            if subset == "test":
-                test_indices = indices[:split_point]
-                self.data = test_val_data.iloc[test_indices]
-            elif subset == "val":
-                val_indices = indices[split_point:]
-                self.data = test_val_data.iloc[val_indices]
+            self.data = self.data[self.data["is_train"] == 0]
+            # test_val_data = self.data[self.data["is_train"] == 0]
+            # indices = np.arange(test_val_data.shape[0])
+            # np.random.shuffle(indices)  # Shuffle indices to randomize test/val split
+            # split_point = int(len(indices) / 2)
+            # if subset == "test":
+            #     test_indices = indices[:split_point]
+            #     self.data = test_val_data.iloc[test_indices]
+            # elif subset == "val":
+            #     val_indices = indices[split_point:]
+            #     self.data = test_val_data.iloc[val_indices]
 
     def __len__(self):
         return len(self.data)
@@ -108,6 +109,7 @@ class BirdClassificationCNN(nn.Module):
             print("Load weights from scratch")
             self.resnet = resnet18()
 
+        self.use_pretrained = use_pretrained
         self.resnet.fc = nn.Linear(512, num_classes)
         # self.conv1 = nn.Conv2d(1, 3, kernel_size=1)
         self.loss_record = {
@@ -120,7 +122,6 @@ class BirdClassificationCNN(nn.Module):
         }
         self.load_data()
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.writer = SummaryWriter()
 
     def forward(self, x):
         return self.resnet(x)
@@ -133,10 +134,14 @@ class BirdClassificationCNN(nn.Module):
     def train(
         self, epochs=50, lr=0.001, momentum=0.9, weight_decay=0.001, use_cache=False
     ):
-        cache_path = f"./cache/{lr}_{momentum}_{weight_decay}.pt"
+        config_specified_name = (
+            f"{lr}_{momentum}_{weight_decay}_{int(self.use_pretrained)}"
+        )
+        cache_path = f"./cache/model_{config_specified_name}.pt"
         if use_cache:
             self.read_model(path=cache_path)
 
+        self.writer = SummaryWriter(f"./runs/{config_specified_name}")
         train_loader = self.train_loader
 
         device = self.device
@@ -179,14 +184,12 @@ class BirdClassificationCNN(nn.Module):
 
         print("Finished Training")
         # save the loss record and accuracy record
-        pickle.dump(
-            self.loss_record, open("./cache/0.001_0.9_0.001.ptloss_record.pkl", "wb")
-        )
+        pickle.dump(self.loss_record, open("./cache/loss_record.pkl", "wb"))
         pickle.dump(self.accuracy_record, open("./cache/accuracy_record.pkl", "wb"))
 
     # 读取模型参数
     def read_model(self, path="./cache/model.pt"):
-        self.load_state_dict(path)
+        self.load_state_dict(torch.load(path))
 
     # 在数据集上评估模型，返回总样本数和正确分类的样本数
     def evaluate(self, loader):
