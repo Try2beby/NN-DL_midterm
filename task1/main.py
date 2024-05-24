@@ -56,17 +56,17 @@ class CUB200(Dataset):
         if subset == "train":
             self.data = self.data[self.data["is_train"] == 1]
         else:
-            self.data = self.data[self.data["is_train"] == 0]
-            # test_val_data = self.data[self.data["is_train"] == 0]
-            # indices = np.arange(test_val_data.shape[0])
-            # np.random.shuffle(indices)  # Shuffle indices to randomize test/val split
-            # split_point = int(len(indices) / 2)
-            # if subset == "test":
-            #     test_indices = indices[:split_point]
-            #     self.data = test_val_data.iloc[test_indices]
-            # elif subset == "val":
-            #     val_indices = indices[split_point:]
-            #     self.data = test_val_data.iloc[val_indices]
+            # self.data = self.data[self.data["is_train"] == 0]
+            test_val_data = self.data[self.data["is_train"] == 0]
+            indices = np.arange(test_val_data.shape[0])
+            np.random.shuffle(indices)  # Shuffle indices to randomize test/val split
+            split_point = int(len(indices) / 2)
+            if subset == "test":
+                test_indices = indices[:split_point]
+                self.data = test_val_data.iloc[test_indices]
+            elif subset == "val":
+                val_indices = indices[split_point:]
+                self.data = test_val_data.iloc[val_indices]
 
     def __len__(self):
         return len(self.data)
@@ -137,7 +137,12 @@ class BirdClassificationCNN(nn.Module):
         config_specified_name = (
             f"{lr}_{momentum}_{weight_decay}_{int(self.use_pretrained)}"
         )
-        cache_path = f"./cache/model_{config_specified_name}.pt"
+
+        cache_path = f"./cache/model_{config_specified_name}/"
+
+        # make cache directory if not exists
+        os.makedirs(cache_path, exist_ok=True)
+
         if use_cache:
             self.read_model(path=cache_path)
 
@@ -146,11 +151,39 @@ class BirdClassificationCNN(nn.Module):
 
         device = self.device
         self.to(device)
+
+        # Get the parameters of the fc layer
+        fc_params = list(self.resnet.fc.parameters())
+        fc_params_ids = {id(p) for p in fc_params}
+
+        # Get the parameters of the other layers
+        base_params = [p for p in self.parameters() if id(p) not in fc_params_ids]
+
         loss_function = nn.CrossEntropyLoss()
         # optimizer = optim.Adam(self.parameters(), lr=0.001, weight_decay=0.0001)
-        optimizer = optim.SGD(
-            self.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay
-        )
+        if self.use_pretrained:
+            # Create the optimizer with two parameter groups
+            optimizer = optim.SGD(
+                [
+                    {
+                        "params": base_params,
+                        "lr": lr * 1e-1,
+                    },  # 0.1 times the normal learning rate for the base layers
+                    {
+                        "params": fc_params,
+                        "lr": lr,
+                    },  # normal learning rate for the fc layer
+                ],
+                momentum=momentum,
+                weight_decay=weight_decay,
+            )
+        else:
+            optimizer = optim.SGD(
+                self.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay
+            )
+
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.6)
+
         for epoch in range(epochs):
             # running_loss = 0.0
             for i, data in enumerate(train_loader, 0):
@@ -164,7 +197,13 @@ class BirdClassificationCNN(nn.Module):
                 optimizer.step()
                 # running_loss += loss.item()
 
-            torch.save(self.state_dict(), cache_path)
+            scheduler.step()
+
+            if epoch % 5 == 0:
+                torch.save(
+                    self.state_dict(),
+                    cache_path + config_specified_name + f"_{epoch}.pt",
+                )
 
             # self.loss_record.append(running_loss / len(train_loader))
             eval_res = self.evaluate_on_train_and_val()
@@ -176,6 +215,20 @@ class BirdClassificationCNN(nn.Module):
             self.writer.add_scalar("Loss/test", eval_val["loss"], epoch)
             self.writer.add_scalar("Accuracy/train", eval_train["accuracy"], epoch)
             self.writer.add_scalar("Accuracy/test", eval_val["accuracy"], epoch)
+
+            if self.use_pretrained:
+                # fc learning rate
+                self.writer.add_scalar(
+                    "Learning rate/fc", optimizer.param_groups[1]["lr"], epoch
+                )
+                # base learning rate
+                self.writer.add_scalar(
+                    "Learning rate/base", optimizer.param_groups[0]["lr"], epoch
+                )
+            else:
+                self.writer.add_scalar(
+                    "Learning rate", optimizer.param_groups[0]["lr"], epoch
+                )
 
             self.loss_record["train"].append(eval_train["loss"])
             self.loss_record["val"].append(eval_val["loss"])
