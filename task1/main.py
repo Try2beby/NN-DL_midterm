@@ -56,17 +56,27 @@ class CUB200(Dataset):
         if subset == "train":
             self.data = self.data[self.data["is_train"] == 1]
         else:
-            # self.data = self.data[self.data["is_train"] == 0]
-            test_val_data = self.data[self.data["is_train"] == 0]
-            indices = np.arange(test_val_data.shape[0])
-            np.random.shuffle(indices)  # Shuffle indices to randomize test/val split
-            split_point = int(len(indices) / 2)
-            if subset == "test":
-                test_indices = indices[:split_point]
-                self.data = test_val_data.iloc[test_indices]
-            elif subset == "val":
-                val_indices = indices[split_point:]
-                self.data = test_val_data.iloc[val_indices]
+            self.data = self.data[self.data["is_train"] == 0]
+            # test_val_data = self.data[self.data["is_train"] == 0]
+            # test_data = pd.DataFrame()
+            # val_data = pd.DataFrame()
+
+            # # Split test and validation data for each label
+            # for label in test_val_data["label"].unique():
+            #     label_data = test_val_data[test_val_data["label"] == label]
+            #     indices = np.arange(label_data.shape[0])
+            #     np.random.shuffle(
+            #         indices
+            #     )  # Shuffle indices to randomize test/val split
+            #     split_point = int(len(indices) / 2)
+            #     if subset == "test":
+            #         test_indices = indices[:split_point]
+            #         test_data = pd.concat([test_data, label_data.iloc[test_indices]])
+            #     elif subset == "val":
+            #         val_indices = indices[split_point:]
+            #         val_data = pd.concat([val_data, label_data.iloc[val_indices]])
+
+            # self.data = test_data if subset == "test" else val_data
 
     def __len__(self):
         return len(self.data)
@@ -132,11 +142,18 @@ class BirdClassificationCNN(nn.Module):
         self.val_loader = val_loader
 
     def train(
-        self, epochs=50, lr=0.001, momentum=0.9, weight_decay=0.001, use_cache=False
+        self,
+        epochs=50,
+        lr=0.001,
+        momentum=0.9,
+        weight_decay=0.001,
+        use_cache=False,
+        use_scheduler=True,
     ):
-        config_specified_name = (
-            f"{lr}_{momentum}_{weight_decay}_{int(self.use_pretrained)}"
-        )
+        # config_specified_name = (
+        #     f"{lr}_{momentum}_{weight_decay}_{int(self.use_pretrained)}"
+        # )
+        config_specified_name = f"{lr}_{int(use_scheduler)}_{momentum}_{weight_decay}_{int(self.use_pretrained)}"
 
         cache_path = f"./cache/model_{config_specified_name}/"
 
@@ -163,26 +180,32 @@ class BirdClassificationCNN(nn.Module):
         # optimizer = optim.Adam(self.parameters(), lr=0.001, weight_decay=0.0001)
         if self.use_pretrained:
             # Create the optimizer with two parameter groups
+            # optimizer = optim.SGD(
+            #     [
+            #         {
+            #             "params": base_params,
+            #             "lr": lr * 1e-1,
+            #         },  # 0.1 times the normal learning rate for the base layers
+            #         {
+            #             "params": fc_params,
+            #             "lr": lr,
+            #         },  # normal learning rate for the fc layer
+            #     ],
+            #     momentum=momentum,
+            #     weight_decay=weight_decay,
+            # )
             optimizer = optim.SGD(
-                [
-                    {
-                        "params": base_params,
-                        "lr": lr * 1e-1,
-                    },  # 0.1 times the normal learning rate for the base layers
-                    {
-                        "params": fc_params,
-                        "lr": lr,
-                    },  # normal learning rate for the fc layer
-                ],
-                momentum=momentum,
-                weight_decay=weight_decay,
+                self.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay
             )
         else:
             optimizer = optim.SGD(
                 self.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay
             )
 
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.6)
+        if use_scheduler:
+            scheduler = torch.optim.lr_scheduler.StepLR(
+                optimizer, step_size=10, gamma=0.6
+            )
 
         for epoch in range(epochs):
             # running_loss = 0.0
@@ -197,7 +220,8 @@ class BirdClassificationCNN(nn.Module):
                 optimizer.step()
                 # running_loss += loss.item()
 
-            scheduler.step()
+            if use_scheduler:
+                scheduler.step()
 
             if epoch % 5 == 0:
                 torch.save(
@@ -217,13 +241,16 @@ class BirdClassificationCNN(nn.Module):
             self.writer.add_scalar("Accuracy/test", eval_val["accuracy"], epoch)
 
             if self.use_pretrained:
-                # fc learning rate
+                # # fc learning rate
+                # self.writer.add_scalar(
+                #     "Learning rate/fc", optimizer.param_groups[1]["lr"], epoch
+                # )
+                # # base learning rate
+                # self.writer.add_scalar(
+                #     "Learning rate/base", optimizer.param_groups[0]["lr"], epoch
+                # )
                 self.writer.add_scalar(
-                    "Learning rate/fc", optimizer.param_groups[1]["lr"], epoch
-                )
-                # base learning rate
-                self.writer.add_scalar(
-                    "Learning rate/base", optimizer.param_groups[0]["lr"], epoch
+                    "Learning rate", optimizer.param_groups[0]["lr"], epoch
                 )
             else:
                 self.writer.add_scalar(
@@ -242,7 +269,13 @@ class BirdClassificationCNN(nn.Module):
 
     # 读取模型参数
     def read_model(self, path="./cache/model.pt"):
-        self.load_state_dict(torch.load(path))
+        # check the suffix
+        if path.endswith(".pt"):
+            self.load_state_dict(torch.load(path))
+        elif path.endswith(".pth"):
+            self.resnet.load_state_dict(torch.load(path))
+        else:
+            raise ValueError("Invalid file format")
 
     # 在数据集上评估模型，返回总样本数和正确分类的样本数
     def evaluate(self, loader):
@@ -266,6 +299,8 @@ class BirdClassificationCNN(nn.Module):
                 correct += (predicted == labels).sum().item()
         avg_loss = total_loss / len(loader)
         accuracy = correct / total
+        # print(total, correct)
+
         return accuracy, avg_loss
 
     # 在训练集和验证集上评估模型，并打印准确率
@@ -310,6 +345,9 @@ def main():
     parser.add_argument("--use_cache", type=str2bool, default=False, help="Use cache")
     parser.add_argument(
         "--use_pretrained", type=str2bool, default=True, help="Use pretrained"
+    )
+    parser.add_argument(
+        "--use_scheduler", type=str2bool, default=True, help="Use scheduler"
     )
 
     args = vars(parser.parse_args())
