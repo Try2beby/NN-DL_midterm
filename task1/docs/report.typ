@@ -35,4 +35,14 @@ Caltech-UCSD Birds-200-2011 (CUB-200-2011) 数据集是用于细粒度视觉分�
 
 == 实验结果
 
-首先我们对比是否使用预训练权重初始化的实验结果
+#figure(
+    grid(
+        columns: 2,
+        gutter: 2mm,
+        
+        
+    ),
+    caption: [
+        Visualization of Weights of Each Neuron in Layer 1 and Layer 2
+    ],
+)
