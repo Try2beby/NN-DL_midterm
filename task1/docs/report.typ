@@ -1,5 +1,11 @@
 #set heading(numbering: "1.1")
 
+#set quote(block: true)
+
+#quote[
+    repo 地址: https://github.com/He1senbergg/MidTerm
+]
+
 = Task 1
 == 模型架构
 
@@ -25,11 +31,33 @@ Caltech-UCSD Birds-200-2011 (CUB-200-2011) 数据集是用于细粒度视觉分�
   caption:[数据集概览]
 )
 
-我们根据数据集中的`train_test_split.txt`先划分出训练集. 在剩下的每个类别的数据中, 随机以 1:1 的比例划分验证集和测试集. 
+我们根据数据集中的`train_test_split.txt`先划分出训练集. 在剩下的每个类别的数据中, 随机以 1:1 的比例划分验证集和验证集. 
 
 == 实验结果
 
 === 预训练权重初始化（除fc层外）
+
+使用预训练权重时, 置全连接层学习率为 `lr`, 全连接层以外的学习率 `0.1 * lr`, 具体设置方式为
+```py
+parameters = [
+{"params": model.fc.parameters(), "lr": learning_rate},
+{"params": [param for name, param in model.named_parameters() if "fc" not in name], "lr": learning_rate*0.1}
+]
+```
+另外, 我们还添加了学习率递减策略, 在第 `num_epochs * 0.5` 和 `num_epochs * 0.75` 将学习率乘以 `gamma` (`gamma < 1`).
+
+我们尝试了两种优化器: SGD 和 Adam.
+
+对于SGD, 考虑到在验证集上准确率较低, 可能存在过拟合, 我们调整测试了三个 `weight_decay` 值, 分别为 `0.001, 0.01, 0.05`. 结果表明, `weight_decay = 0.01` 时在验证集上准确率较高 (0.682 > 0.677 > 0.675), 损失函数值较低, 但三者并无明显差距. 因此在图像中呈现的效果也是三者相近.
+
+// #table(
+//   align: center+horizon,
+//     columns: 2,
+//     [`weight_decay`],[`lr`],
+//     [0.001],[0.001],
+//     [0.01],[0.001],
+//     [0.05],[0.001]
+// )
 
 #figure(
     grid(
@@ -40,7 +68,7 @@ Caltech-UCSD Birds-200-2011 (CUB-200-2011) 数据集是用于细粒度视觉分�
         
     ),
     caption: [
-        训练集和测试集上 accuracy 变化 (SGD)
+        训练集和验证集上 accuracy 变化 (SGD)
     ],
 )
 
@@ -53,9 +81,11 @@ Caltech-UCSD Birds-200-2011 (CUB-200-2011) 数据集是用于细粒度视觉分�
         
     ),
     caption: [
-        训练集和测试集上 loss 变化 (SGD)
+        训练集和验证集上 loss 变化 (SGD)
     ],
 )
+
+对于Adam, 我们同样测试了上述三个 `weight_decay` 值. 结果表明 `weight_decay` 值对最终准确率和损失函数值无明显影响, 其主要影响二者图像中波动的起止点. 另一个明显的问题是相较于SGD, Adam迭代过程中出现了明显的波动现象, 尤其是在验证集上, 可能原因是学习率设置过大, 或者 `batch_size` 过小引入了高方差.
 
 #figure(
     grid(
@@ -66,7 +96,7 @@ Caltech-UCSD Birds-200-2011 (CUB-200-2011) 数据集是用于细粒度视觉分�
         
     ),
     caption: [
-        训练集和测试集上 accuracy 变化 (Adam)
+        训练集和验证集上 accuracy 变化 (Adam)
     ],
 )
 
@@ -79,11 +109,14 @@ Caltech-UCSD Birds-200-2011 (CUB-200-2011) 数据集是用于细粒度视觉分�
         
     ),
     caption: [
-        训练集和测试集上 loss 变化 (Adam)
+        训练集和验证集上 loss 变化 (Adam)
     ],
 )
 
 === 随机初始化
+
+我们还测试了随机初始化网络参数的效果 (`weight_decay = 0.01, lr = 0.001`). 与使用预训练权重相比, 虽然也能在训练集上达到较高的准确率, 但在验证集上准确率和损失函数值的变化明显不稳定, 且最终验证集上准确率 (0.17) 明显低于使用预训练权重时的情形, 表明模型泛化能力明显减弱.
+
 #figure(
     grid(
         columns: 2,
@@ -93,7 +126,7 @@ Caltech-UCSD Birds-200-2011 (CUB-200-2011) 数据集是用于细粒度视觉分�
         
     ),
     caption: [
-        训练集和测试集上 accuracy 变化 (SGD)
+        训练集和验证集上 accuracy 变化 (SGD)
     ],
 )
 
@@ -106,6 +139,6 @@ Caltech-UCSD Birds-200-2011 (CUB-200-2011) 数据集是用于细粒度视觉分�
         
     ),
     caption: [
-        训练集和测试集上 loss 变化 (SGD)
+        训练集和验证集上 loss 变化 (SGD)
     ],
 )
