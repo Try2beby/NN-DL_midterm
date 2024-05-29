@@ -11,15 +11,9 @@
 我们修改ResNet-18的架构, 将其输出层大小设置为200以适应数据集的类别数量.
 
 ```py
-if use_pretrained:
-    print("Load weights from pretrained model")
-    self.resnet = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
-else:
-    print("Load weights from scratch")
-    self.resnet = resnet18()
-
-self.use_pretrained = use_pretrained
-self.resnet.fc = nn.Linear(512, num_classes)
+model = models.resnet18()
+num_ftrs = model.fc.in_features
+model.fc = nn.Linear(num_ftrs, num_classes)
 ```
 
 == 数据集介绍
@@ -35,14 +29,83 @@ Caltech-UCSD Birds-200-2011 (CUB-200-2011) 数据集是用于细粒度视觉分�
 
 == 实验结果
 
+=== 预训练权重初始化（除fc层外）
+
 #figure(
     grid(
         columns: 2,
         gutter: 2mm,
-        
+        image("./assets/Accuracy_Train_Accuracy.svg"),
+        image("./assets/Accuracy_Test_Accuracy.svg")
         
     ),
     caption: [
-        Visualization of Weights of Each Neuron in Layer 1 and Layer 2
+        训练集和测试集上 accuracy 变化 (SGD)
+    ],
+)
+
+#figure(
+    grid(
+        columns: 2,
+        gutter: 2mm,
+        image("./assets/Loss_Train_Loss.svg"),
+        image("./assets/Loss_Test_Loss.svg")
+        
+    ),
+    caption: [
+        训练集和测试集上 loss 变化 (SGD)
+    ],
+)
+
+#figure(
+    grid(
+        columns: 2,
+        gutter: 2mm,
+        image("./assets/adam_Accuracy_Train_Accuracy.svg"),
+        image("./assets/adam_Accuracy_Test_Accuracy.svg")
+        
+    ),
+    caption: [
+        训练集和测试集上 accuracy 变化 (Adam)
+    ],
+)
+
+#figure(
+    grid(
+        columns: 2,
+        gutter: 2mm,
+        image("./assets/adam_Loss_Train_Loss.svg"),
+        image("./assets/adam_Loss_Test_Loss.svg")
+        
+    ),
+    caption: [
+        训练集和测试集上 loss 变化 (Adam)
+    ],
+)
+
+=== 随机初始化
+#figure(
+    grid(
+        columns: 2,
+        gutter: 2mm,
+        image("./assets/s_Accuracy_Train_Accuracy.svg"),
+        image("./assets/s_Accuracy_Test_Accuracy.svg")
+        
+    ),
+    caption: [
+        训练集和测试集上 accuracy 变化 (SGD)
+    ],
+)
+
+#figure(
+    grid(
+        columns: 2,
+        gutter: 2mm,
+        image("./assets/s_Loss_Train_Loss.svg"),
+        image("./assets/s_Loss_Test_Loss.svg")
+        
+    ),
+    caption: [
+        训练集和测试集上 loss 变化 (SGD)
     ],
 )
